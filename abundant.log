@@ -1,0 +1,5 @@
+30 Sep 2015 22:18:10 | ABUNDANT |        log |    DEBUG | - - - - - - - - - - - - - -
+30 Sep 2015 22:18:10 | ABUNDANT |        log |    DEBUG | Logger is ready
+30 Sep 2015 22:18:10 | ABUNDANT |     config |     INFO | Loaded initialisation config
+30 Sep 2015 22:18:10 | ABUNDANT |     config |     INFO | Loaded master config
+30 Sep 2015 22:18:25 | ABUNDANT |    archive |    ERROR | Archive config not found at D:/b/meta/archive_config.json

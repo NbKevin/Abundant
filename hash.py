@@ -6,6 +6,7 @@ Hash helper.
 """
 
 import hashlib
+
 import binascii
 
 __author__ = 'Nb'
