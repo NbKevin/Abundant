@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 import json
+import logging.handlers
 
 __author__ = 'Kevin'
 
@@ -18,8 +19,9 @@ with open('init_config.json', mode='r', encoding='utf-8') as raw_init_config:
 ABUNDANT_LOG_PATH = os.path.join(
     INIT_CONFIG['MasterConfigDirectory'], 'abundant.log'
 )
-ABUNDANT_LOG_FILE_HANDLER = logging.FileHandler(
-    ABUNDANT_LOG_PATH, encoding='utf-8'
+ABUNDANT_LOG_FILE_HANDLER = logging.handlers.RotatingFileHandler(
+    ABUNDANT_LOG_PATH, mode='a', encoding='utf-8', maxBytes=5 * 1024 * 1024,
+    backupCount=1, delay=False
 )
 
 ABUNDANT_LOG_STD_OUT_HANDLER = logging.StreamHandler(sys.stdout)

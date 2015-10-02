@@ -7,6 +7,7 @@ Archive agent.
 
 import os
 import json
+import shutil
 
 from version import VersionAgent, create_version, get_versions
 from log import ABUNDANT_LOGGER
@@ -37,6 +38,7 @@ class ArchiveAgent:
         """Load all versions in this archive."""
         self.versions = get_versions(self)
         self.versions.sort(key=lambda x: x.time_of_creation)
+        self.validate_versions()
         number_of_versions = len(self.versions)
         ABUNDANT_LOGGER.debug('Found %s version%s' % (number_of_versions, 's' if number_of_versions > 1 else ''))
 
@@ -50,12 +52,34 @@ class ArchiveAgent:
             self.archive_config = json.load(raw_archive_config)
         ABUNDANT_LOGGER.debug('Loaded archive config')
 
+    def validate_versions(self):
+        """Validate versions."""
+        # make sure only one base version exists
+        # and versions are sorted from oldest to latest
+        found_base_version = False
+        previous_version = None
+        for version in self.versions:
+            if version.is_base_version:
+                if found_base_version:
+                    return False
+                found_base_version = True
+            if previous_version:
+                if version < previous_version:
+                    return False
+        return True
+
     def get_version(self, uuid: str):
         """Get version with a given UUID."""
         for version in self.versions:
             if version.uuid == uuid:
                 return version
         return None
+
+    def __str__(self):
+        return 'Archive %s from %s to %s' % (self.uuid, self.source_dir, self.archive_dir)
+
+    def __repr__(self):
+        return 'Archive %s' % self.uuid
 
     @property
     def algorithm(self) -> str:
@@ -73,52 +97,65 @@ class ArchiveAgent:
         return self.archive_config['UUID']
 
     @property
-    def maximum_number_of_versions(self):
+    def max_number_of_versions(self):
         return self.archive_config['MaxNumberOfVersions']
 
     @property
     def base_version(self) -> VersionAgent:
         """Get the base version in this archive."""
-        for version in self.versions:
-            if version.is_base_version:
-                return version
-        return None
+        return self.versions[0]
 
-    def create_base(self):
+    @property
+    def last_version(self) -> VersionAgent:
+        """Get the last version in this archive."""
+        return self.versions[-1]
+
+    def create_base(self) -> VersionAgent:
         """Create the base version."""
         if self.base_version is None:
             create_version(True, self)
         else:
             ABUNDANT_LOGGER.warning('Cannot create duplicate base versions')
         self.load_versions()
+        return self.base_version
 
-    def create_version(self):
+    def create_version(self) -> VersionAgent:
         """Add a new version."""
-        if self.maximum_number_of_versions == 1:
+        if self.max_number_of_versions == 1:
             self.base_version.remove()
             self.create_base()
         else:
-            while len(self.versions) >= self.maximum_number_of_versions:
+            while len(self.versions) >= self.max_number_of_versions:
                 self.migrate_oldest_version_to_base()
             if self.base_version is None:
-                ABUNDANT_LOGGER.warning('Cannot create additional versions without a base version')
+                ABUNDANT_LOGGER.warning('Cannot create non-base versions without a base version')
             else:
                 create_version(False, self)
         self.load_versions()
+        return self.versions[-1]
 
     def migrate_oldest_version_to_base(self):
         """Migrate the oldest version to the base version.
         But underneath it migrate the base version to the oldest version."""
         assert self.base_version == self.versions[0]
-        self.versions[0].migrate_to(self.versions[1])
-        self.load_versions()
+        if not self.versions:
+            ABUNDANT_LOGGER.warning('No base version found')
+        elif len(self.versions) == 1:
+            ABUNDANT_LOGGER.warning('Cannot migrate when only base version exists')
+        else:
+            self.base_version.migrate_to_next_version()
+            self.load_versions()
 
     def migrate_all_versions_to_base(self):
         """Migrate all versions to the base."""
         assert self.base_version == self.versions[0]
         while len(self.versions) > 1:
-            self.versions[0].migrate_to(self.versions[1])
+            self.base_version.migrate_to_next_version()
             self.load_versions()
+
+    def remove(self):
+        """Remove the archive."""
+        shutil.rmtree(self.archive_dir)
 
 
 def create_archive(archive_record: dict, algorithm: str, max_number_of_versions: int) -> ArchiveAgent:

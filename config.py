@@ -105,7 +105,7 @@ class MasterConfigAgent(metaclass=SingletonMeta):
             return archive_record
         return None
 
-    def delete_archive_record(self, uuid=None, source_dir=None, archive_dir=None):
+    def remove_archive_record(self, uuid=None, source_dir=None, archive_dir=None):
         """Delete an archive record matching given restraints."""
         archive = self.get_archive_record(uuid, source_dir, archive_dir)
         if archive_dir is not None:

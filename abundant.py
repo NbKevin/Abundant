@@ -51,7 +51,7 @@ class AbundantAgent:
             archive = create_archive(new_archive_record, algorithm, max_number_of_versions)
         except OSError as e:
             # delete the archive record previously created
-            self.master_config.delete_archive_record(uuid=new_archive_record['UUID'])
+            self.master_config.remove_archive_record(uuid=new_archive_record['UUID'])
             ABUNDANT_LOGGER.debug('Archive record added removed')
 
             raise e
@@ -75,6 +75,12 @@ class AbundantAgent:
     def get_all_archives(self):
         """Get all available archives."""
         return self.master_config['ArchiveRecords']
+
+    def remove_archive(self, uuid=None, source_dir=None, archive_dir=None):
+        """Remove an archive."""
+        archive = self.get_archive(uuid, source_dir, archive_dir)
+        archive.remove()
+        self.master_config.remove_archive_record(uuid)
 
 
 Abundant = AbundantAgent()

@@ -62,3 +62,6 @@ class HashAgent:
                 hasher.update(chuck)
                 chuck = file.read(2048)
             return hasher.hexdigest()
+
+    def __str__(self):
+        return '%s HashAgent' % self.algorithm.upper()
