@@ -42,5 +42,5 @@ ABUNDANT_LOGGER.setLevel(
 ABUNDANT_LOGGER.addHandler(ABUNDANT_LOG_STD_OUT_HANDLER)
 ABUNDANT_LOGGER.addHandler(ABUNDANT_LOG_FILE_HANDLER)
 
-ABUNDANT_LOGGER.debug('- - - - - - - - - - - - - -')
+ABUNDANT_LOGGER.debug('Loading abundant...')
 ABUNDANT_LOGGER.debug('Logger is ready')

@@ -2,14 +2,6 @@
   "MasterConfigVersion": 0.1,
   "ArchiveRecords": [
     {
-      "SourceDirectory": "C:/a",
-      "ArchiveDirectory": "D:/b",
-      "UUID": "b9b3382d-6a21-434f-982d-500952be2e69"
-    },
-    {
-      "SourceDirectory": "C:/Intel",
-      "ArchiveDirectory": "D:/X",
-      "UUID": "5378eddf-c5f0-4bc9-8ae7-3e6b2b0c34eb"
     }
   ]
 }

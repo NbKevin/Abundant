@@ -1,5 +1,5 @@
 {
   "MasterConfigDirectory": "",
-  "LoggingLevel": "Debug",
+  "LoggingLevel": "Info",
   "CurrentMasterConfigVersion": 0.1
 }

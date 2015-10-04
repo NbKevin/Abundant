@@ -26,10 +26,11 @@ ARCHIVE_CONFIG_TEMPLATE = {
 class ArchiveAgent:
     """Archive agent is responsible for a single archive."""
 
-    def __init__(self, archive_dir: str):
+    def __init__(self, archive_dir: str, on_creation_pardon=False):
         """Create the agent from an archive directory."""
         self.archive_dir = archive_dir
         self.archive_config_path = os.path.join(self.archive_dir, 'meta', 'archive_config.json')
+        self.on_creation_pardon = on_creation_pardon
         self.versions = []
         self.load_config()
         self.load_versions()
@@ -38,7 +39,12 @@ class ArchiveAgent:
         """Load all versions in this archive."""
         self.versions = get_versions(self)
         self.versions.sort(key=lambda x: x.time_of_creation)
-        self.validate_versions()
+        if self.on_creation_pardon:
+            self.on_creation_pardon = False
+        elif not self.validate_versions():
+            self.fix_missing_base_version()
+            assert self.validate_versions(), 'Fatal internal error: either more than one base version' \
+                                             'is found or sorting function is not working'
         number_of_versions = len(self.versions)
         ABUNDANT_LOGGER.debug('Found %s version%s' % (number_of_versions, 's' if number_of_versions > 1 else ''))
 
@@ -66,7 +72,15 @@ class ArchiveAgent:
             if previous_version:
                 if version < previous_version:
                     return False
-        return True
+        return found_base_version
+
+    def fix_missing_base_version(self):
+        """If there is no base version then set the oldest one as the base version."""
+        ABUNDANT_LOGGER.info('Fixing base version...')
+        if self.versions and self.base_version is None:
+            self.versions[0].is_base_version = True
+        self.versions = get_versions(self)
+        self.versions.sort(key=lambda x: x.time_of_creation)
 
     def get_version(self, uuid: str):
         """Get version with a given UUID."""
@@ -103,7 +117,12 @@ class ArchiveAgent:
     @property
     def base_version(self) -> VersionAgent:
         """Get the base version in this archive."""
-        return self.versions[0]
+        if len(self.versions) == 0:
+            return None
+        for version in self.versions:
+            if version.is_base_version:
+                return version
+        return None
 
     @property
     def last_version(self) -> VersionAgent:
@@ -202,4 +221,4 @@ def create_archive(archive_record: dict, algorithm: str, max_number_of_versions:
         raise e
     else:
         ABUNDANT_LOGGER.info('Created archive: %s' % uuid)
-        return ArchiveAgent(archive_dir)
+        return ArchiveAgent(archive_dir, on_creation_pardon=True)

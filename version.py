@@ -8,11 +8,12 @@ Agents for various backup versions.
 import time
 import os
 import uuid
-import json
 import shutil
 # from archive import ArchiveAgent
 from log import ABUNDANT_LOGGER
 from hash import HashAgent
+from config import get_config, create_config
+from support import get_relative_path
 
 __author__ = 'Kevin'
 
@@ -41,11 +42,10 @@ class VersionAgent:
 
     def load_config(self):
         """Load configuration for this version."""
-        with open(self.version_config_path, mode='r', encoding='utf-8') as raw_version_config:
-            version_config = json.load(raw_version_config)
+        with get_config(self.version_config_path) as version_config:
             for version in version_config['VersionRecords']:
                 if version['UUID'] == self.uuid:
-                    self.version_config = version
+                    self.version_config = dict(version)
                     ABUNDANT_LOGGER.debug('Version record found: %s' % self.uuid)
                     return
         ABUNDANT_LOGGER.error('Cannot find config for version %s' % self.uuid)
@@ -59,14 +59,11 @@ class VersionAgent:
     @is_base_version.setter
     def is_base_version(self, is_base_version: bool):
         """Set if this version is a base version."""
-        with open(self.version_config_path, mode='r', encoding='utf-8') as raw_version_config:
-            full_version_config = json.load(raw_version_config)
-        for version in full_version_config['VersionRecords']:
-            if version['UUID'] == self.uuid:
-                version['IsBaseVersion'] = is_base_version
-                break
-        with open(self.version_config_path, mode='w', encoding='utf-8') as raw_version_config:
-            json.dump(full_version_config, raw_version_config)
+        with get_config(config_path=self.version_config_path, save_change=True) as version_config:
+            for version in version_config['VersionRecords']:
+                if version['UUID'] == self.uuid:
+                    version['IsBaseVersion'] = is_base_version
+                    break
         if is_base_version:
             ABUNDANT_LOGGER.info('Version %s is now base version' % self.uuid)
         else:
@@ -246,7 +243,7 @@ class VersionAgent:
                 shutil.move(absolute_path, absolute_path_in_another_version)
                 number_of_file_copied += 1
                 ABUNDANT_LOGGER.debug('Copied %s' % absolute_path_in_another_version)
-        ABUNDANT_LOGGER.info('Copied %s file%s' % (number_of_file_copied, 's' if number_of_file_copied > 1 else ''))
+        ABUNDANT_LOGGER.info('Copied %s file(s)' % number_of_file_copied)
 
         # set base version
         if self.is_base_version:
@@ -262,53 +259,56 @@ class VersionAgent:
     def copy_files(self):
         """Copy files from source directory to version directory."""
         ABUNDANT_LOGGER.debug('Copying files...')
-        version_dir = os.path.join(self.archive_agent.archive_dir, 'archive', self.uuid)
-        if not os.path.exists(version_dir):
-            os.mkdir(version_dir)
-
-        # create all directories
-        source_dir = self.archive_agent.source_dir
-        for root_dir, dirs, files in os.walk(source_dir):
-            for dir in dirs:
-                relative_dir = os.path.join(root_dir, dir).lstrip(source_dir).lstrip('/').lstrip('\\')
-                full_dir = os.path.join(version_dir, relative_dir)
-                if not os.path.exists(full_dir):
-                    os.mkdir(full_dir)
 
         # copy new or modified files
+        source_dir = self.archive_agent.source_dir
         number_of_file_copied = 0
         for root_dir, dirs, files in os.walk(source_dir):
+            for dir in dirs:
+                absolute_dir = os.path.join(root_dir, dir)
+                relative_dir = get_relative_path(absolute_dir, source_dir)
+                os.makedirs(self._get_full_path_of_file(relative_dir), exist_ok=True)
             for file in files:
-                relative_path = os.path.join(root_dir, file).lstrip(source_dir).lstrip('/').lstrip('\\')
-                full_path = os.path.join(version_dir, relative_path)
-                source_path = os.path.join(root_dir, file)
-                last_version = self._get_previous_version_of_file(relative_path)
-                if not self.is_base_version and last_version is not None and \
-                                self.hasher.hash(last_version._get_full_path_of_file(relative_path)) \
-                                == self.hasher.hash(source_path):
+                source_absolute_path = os.path.join(root_dir, file)
+                relative_path = get_relative_path(source_absolute_path, source_dir)
+
+                # find the previous version of this file
+                previous_version = self._get_previous_version_of_file(relative_path)
+
+                # under following circumstances file will be treated
+                # as already existing in previous versions and will
+                # not be copied
+                # if this is not a base version
+                # and if there is a previous version for this file
+                # and if that previous version is identical to current one
+                if not self.is_base_version \
+                        and previous_version is not None \
+                        and self.hasher.hash(previous_version._get_full_path_of_file(relative_path)) \
+                                == self.hasher.hash(source_absolute_path):
+                    ABUNDANT_LOGGER.debug('Skipping %s' % source_absolute_path)
                     continue
-                shutil.copy(source_path, full_path)
+
+                # otherwise just copy the file
+                shutil.copy(source_absolute_path, self._get_full_path_of_file(relative_path))
                 number_of_file_copied += 1
-                ABUNDANT_LOGGER.debug('Copied file %s' % full_path)
-        ABUNDANT_LOGGER.info('Copied %s file%s' % (number_of_file_copied, 's' if number_of_file_copied > 1 else ''))
+                ABUNDANT_LOGGER.debug('Copied file %s' % relative_path)
+        ABUNDANT_LOGGER.info('Copied %s file(s)' % number_of_file_copied)
 
     def remove(self, base_version_pardon=False):
         """Remove this version."""
         if not base_version_pardon and self.is_base_version:
             raise PermissionError('Base version cannot be removed')
+
         # delete version record
-        with open(self.version_config_path, mode='r', encoding='utf-8') as raw_version_config:
-            current_version_config = json.load(raw_version_config)
-        current_version_record = [version for version in current_version_config['VersionRecords']
-                                  if version['UUID'] == self.uuid][0]
-        current_version_config['VersionRecords'].remove(current_version_record)
-        with open(self.version_config_path, mode='w', encoding='utf-8') as raw_version_config:
-            json.dump(current_version_config, raw_version_config)
+        with get_config(self.version_config_path, save_change=True) as version_config:
+            current_version_record = [version for version in version_config['VersionRecords']
+                                      if version['UUID'] == self.uuid][0]
+            version_config['VersionRecords'].remove(current_version_record)
 
         # delete directory
         shutil.rmtree(self.version_dir)
 
-        # update archive holding records
+        # update version records
         self.archive_agent.load_versions()
 
         ABUNDANT_LOGGER.info('Removed version %s' % self.uuid)
@@ -316,12 +316,13 @@ class VersionAgent:
     def export(self, destination_dir: str, exact=False):
         """Export files in this version to destination directory."""
         ABUNDANT_LOGGER.debug('Exporting version %s to %s' % (self.uuid, destination_dir))
+
         if not os.path.exists(destination_dir):
             ABUNDANT_LOGGER.error('Cannot find destination directory: %s' % destination_dir)
             raise FileNotFoundError('Cannot find destination directory: %s' % destination_dir)
+
         file_source = self.files if not exact else self.exact_files
         for relative_path, absolute_path in file_source:
-            # create directory
             destination_path = os.path.join(destination_dir, relative_path)
             os.makedirs(os.path.dirname(destination_path), exist_ok=True)
             shutil.copy(absolute_path, destination_path)
@@ -337,7 +338,7 @@ def create_version(is_base_version: bool, archive_agent) -> VersionAgent:
     while archive_agent.get_version(version_uuid):
         version_uuid = str(uuid.uuid4())
 
-    # create version record
+    # prepare version record
     version_record = dict(VERSION_RECORD_TEMPLATE)
     version_record.update({
         'TimeOfCreation': time.time(),
@@ -346,24 +347,22 @@ def create_version(is_base_version: bool, archive_agent) -> VersionAgent:
     })
     ABUNDANT_LOGGER.debug('Creating %s version: %s' % ('base' if is_base_version else 'non-base', version_uuid))
 
-    # read current version records
+    # create version config if no version is present
     version_config_path = os.path.join(archive_agent.archive_dir, 'meta', 'version_config.json')
     if not os.path.exists(version_config_path):
-        version_config = dict(VERSION_CONFIG_TEMPLATE)
+        create_config(VERSION_CONFIG_TEMPLATE, version_config_path)
         ABUNDANT_LOGGER.debug('Created version config: %s' % archive_agent.uuid)
-    else:
-        with open(version_config_path, mode='r', encoding='utf-8') as raw_version_config:
-            version_config = json.load(raw_version_config)
 
     # add version record
-    version_config['VersionRecords'].append(version_record)
-    with open(version_config_path, mode='w', encoding='utf-8') as raw_version_config:
-        json.dump(version_config, raw_version_config)
+    with get_config(version_config_path, save_change=True) as version_config:
+        version_config['VersionRecords'].append(version_record)
+    archive_agent.load_versions()
     ABUNDANT_LOGGER.info('Added version record: %s' % version_uuid)
 
-    # copy files
-    version = VersionAgent(version_uuid, archive_agent)
-    archive_agent.load_versions()
+    # create version directory and copy files
+    version = archive_agent.get_version(version_uuid)
+    if not os.path.exists(version.version_dir):
+        os.mkdir(version.version_dir)
     version.copy_files()
 
     ABUNDANT_LOGGER.info('Created %s version %s' % ('base' if is_base_version else 'non-base', version_uuid))
@@ -374,8 +373,9 @@ def get_versions(archive_agent) -> list:
     """Get all versions."""
     version_config_path = os.path.join(archive_agent.archive_dir, 'meta', 'version_config.json')
     if not os.path.exists(version_config_path):
+        ABUNDANT_LOGGER.warning('Version config missing')
         return list()
-    with open(version_config_path, mode='r', encoding='utf-8') \
-            as raw_version_config:
+
+    with get_config(version_config_path) as version_config:
         return [VersionAgent(version_record['UUID'], archive_agent) for version_record in
-                json.load(raw_version_config)['VersionRecords']]
+                version_config['VersionRecords']]

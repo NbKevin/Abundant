@@ -7,7 +7,7 @@ Main loader.
 
 import os
 
-from config import MasterConfigAgent
+from master_config import MasterConfigAgent
 from archive import create_archive, ArchiveAgent
 from log import ABUNDANT_LOGGER
 from hash import VALID_ALGORITHMS
@@ -80,7 +80,7 @@ class AbundantAgent:
         """Remove an archive."""
         archive = self.get_archive(uuid, source_dir, archive_dir)
         archive.remove()
-        self.master_config.remove_archive_record(uuid)
+        self.master_config.remove_archive_record(archive.uuid)
 
 
 Abundant = AbundantAgent()

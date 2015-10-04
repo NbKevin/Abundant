@@ -7,6 +7,7 @@ Command line interface for abundant.
 
 from log import ABUNDANT_LOGGER, ABUNDANT_LOG_STD_OUT_HANDLER
 
+ABUNDANT_LOGGER.info('Starting command line interface...')
 ABUNDANT_LOGGER.removeHandler(ABUNDANT_LOG_STD_OUT_HANDLER)
 from abundant import Abundant
 
@@ -22,22 +23,20 @@ class CLICommandError(Exception):
         super(CLICommandError, self).__init__(message)
 
 
-WELCOME_MESSAGE = '\nCommand line interface for Abundant, version 0.2'
+WELCOME_MESSAGE = '\nCommand line interface for Abundant, version 0.3'
 
 LIST_ARCHIVE_FORMAT = '''
 Number: {0}
 UUID: {1}
 Source directory: {2}
-Archive directory: {3}
-'''
+Archive directory: {3}'''
 
 LIST_VERSION_FORMAT = '''
 Number: {0}
 UUID: {1}
 Archive UUID: {2}
 Time of creation: {3}
-Base version: {4}
-'''
+Base version: {4}'''
 
 DETAIL_ARCHIVE_FORMAT = '''
 ARCHIVE
@@ -45,19 +44,16 @@ UUID: {0}
 Source directory: {1}
 Archive directory: {2}
 Max number of versions: {3}
-Hash algorithm: {4}
-'''
+Hash algorithm: {4}'''
 
 DETAIL_VERSION_FORMAT = '''
 VERSION
 UUID: {0}
 Archive UUID: {1}
 Time of creation: {2}
-Base version: {3}
-'''
+Base version: {3}'''
 
-CREATE_ARCHIVE_FORMAT = '''
-Creating archive:
+CREATE_ARCHIVE_FORMAT = '''Creating archive:
 
 Source directory: {0}
 Archive directory: {1}
@@ -66,15 +62,13 @@ Max number of versions: {3}
 
 Proceed? '''
 
-CREATE_VERSION_FORMAT = '''
-Creating version:
+CREATE_VERSION_FORMAT = '''Creating version:
 
 For archive: {0}
 
 Proceed? '''
 
-REMOVE_ARCHIVE_FORMAT = '''
-Removing archive:
+REMOVE_ARCHIVE_FORMAT = '''Removing archive:
 
 UUID: {0}
 Source directory: {1}
@@ -84,8 +78,7 @@ Hash algorithm: {4}
 
 Proceed? '''
 
-REMOVE_VERSION_FORMAT = '''
-Removing version:
+REMOVE_VERSION_FORMAT = '''Removing version:
 
 UUID: {0}
 Archive UUID: {1}
@@ -94,8 +87,7 @@ Base version: {3}
 
 Proceed? '''
 
-MIGRATE_ALL_FORMAT = '''
-Migrating all versions in archive:
+MIGRATE_ALL_FORMAT = '''Migrating all versions in archive:
 
 UUID: {0}
 Source directory: {1}
@@ -113,8 +105,7 @@ Base version: {7}
 
 Proceed? '''
 
-MIGRATE_SOME_FORMAT = '''
-Migrating {0} versions in archive:
+MIGRATE_SOME_FORMAT = '''Migrating {0} version(s) in archive:
 
 UUID: {1}
 Source directory: {2}
@@ -132,8 +123,7 @@ Base version: {8}
 
 Proceed? '''
 
-EXPORT_FORMAT = '''
-Exporting version:
+EXPORT_FORMAT = '''Exporting version:
 
 UUID {0}
 Time of creation: {1}
@@ -145,8 +135,7 @@ to directory:
 
 Proceed? '''
 
-EXPORT_EXACT_FORMAT = '''
-Exporting version:
+EXPORT_EXACT_FORMAT = '''Exporting version:
 
 UUID {0}
 Time of creation: {1}
@@ -171,6 +160,7 @@ class CLI:
         self.archives = Abundant.get_all_archives()
         self.VERB_TO_FUNCTION = {
             'list': self.list,
+            'list-exact': self.list_exact,
             'select': self.select,
             'detail': self.detail,
             'quit': self.quit,
@@ -187,6 +177,28 @@ class CLI:
         while True:
             raw_command = input('\nAbundant> ')
             self.evaluate(raw_command)
+            self.validate_selected_archive_and_version()
+
+    def validate_selected_archive_and_version(self):
+        """Make sure selected archive and version are valid."""
+        if self.archive_selected is None:
+            self.version_selected = None
+        else:
+            all_archives = Abundant.get_all_archives()
+            found_match = False
+            for archive in all_archives:
+                if archive['UUID'] == self.archive_selected.uuid:
+                    found_match = True
+            if not found_match:
+                self.archive_selected = None
+            else:
+                if self.version_selected is not None:
+                    found_match = False
+                    for version in self.archive_selected.versions:
+                        if version == self.version_selected:
+                            found_match = True
+                    if not found_match:
+                        self.version_selected = None
 
     def evaluate(self, raw_command: str):
         """Evaluate the raw command."""
@@ -209,7 +221,7 @@ class CLI:
 
     def list(self, target: str, *args):
         """List command."""
-        if target not in ['archive', 'version', 'file', 'exact-file']:
+        if target not in ['archive', 'version', 'file']:
             raise CLICommandError('Unknown list target')
         if target == 'archive':
             if self.archives:
@@ -240,13 +252,25 @@ class CLI:
         elif target == 'file':
             if self.version_selected is None:
                 raise CLICommandError('No version selected')
+            counter = 0
+            print('Listing file in version %s:\n' % self.version_selected.uuid)
             for relative_path, absolute_path in self.version_selected.files:
+                counter += 1
                 print(absolute_path)
-        elif target == 'exact-file':
-            if self.VERB_TO_FUNCTION is None:
-                raise CLICommandError('No version selected')
-            for relative_path, absolute_path in self.version_selected.exact_files:
-                print(absolute_path)
+            print('\n%s file(s) in version %s' % (counter, self.version_selected.uuid))
+
+    def list_exact(self, target: str, *args):
+        """List exact command."""
+        if target != 'file':
+            raise CLICommandError('Unknown list-exact target')
+        if self.version_selected is None:
+            raise CLICommandError('No version selected')
+        counter = 0
+        print('Listing file exactly in version %s:\n' % self.version_selected.uuid)
+        for relative_path, absolute_path in self.version_selected.exact_files:
+            counter += 1
+            print(absolute_path)
+        print('\nExactly %s file(s) in version %s' % (counter, self.version_selected.uuid))
 
     def select(self, target: str, index: str, *args):
         """Select command."""
@@ -335,7 +359,7 @@ class CLI:
                     self.archive_selected.max_number_of_versions,
                     self.archive_selected.algorithm
             )).lower() == 'y':
-                self.archive_selected.remove()
+                Abundant.remove_archive(uuid=self.archive_selected.uuid)
                 self.archive_selected = None
                 print('Removed archive %s' % archive_uuid)
         elif target == 'version':
